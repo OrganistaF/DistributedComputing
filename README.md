@@ -19,7 +19,6 @@ Este es un proyecto para la clase de computación distribuida en la Universidad 
 /DistributedComputing
 │── /server       # Código fuente del servidor en C
 │── /client       # Código fuente del cliente en Python
-│── /gui          # Interfaz gráfica en Python
 │── README.md     # Documentación del proyecto
 ```
 
