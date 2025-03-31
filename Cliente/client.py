@@ -1,24 +1,26 @@
 import socket
+import pygame
 
-# Configuración del servidor
 HOST = "127.18.2.2"
 PORT = 5000
 
 def send_credentials(username, password):
-    """Envía las credenciales al servidor y devuelve la respuesta."""
     try:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect((HOST, PORT))
-
-        # Enviar credenciales
-        credentials = f"{username} {password}"
-        client_socket.send(credentials.encode())
-
-        # Recibir respuesta
-        response = client_socket.recv(1024).decode()
-        client_socket.close()
-
-        return "dentro" if response == "OK" else "Credenciales incorrectas"
-
-    except ConnectionRefusedError:
-        return "Error de conexión"
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((HOST, PORT))
+            s.sendall(f"{username} {password}".encode())
+            
+            # Primera respuesta (OK/ERROR)
+            response = s.recv(1024).decode()
+            if response == "OK":
+                print("Autenticado. Esperando inicio de partida...")
+                
+                # Esperar segunda notificación (READY)
+                status = s.recv(1024).decode()
+                if status == "READY":
+                    print("¡Partida lista! Iniciando juego...")
+                    # Devolver estado y username
+                    return True, "READY", username
+            return False, "Error de autenticación", ""
+    except Exception as e:
+        return False, f"Error: {str(e)}", ""

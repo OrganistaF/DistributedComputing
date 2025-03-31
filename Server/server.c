@@ -3,99 +3,115 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
+#include <sys/wait.h>
 
 #define PORT 5000
-#define BUFFER_SIZE 1024
+#define MAX_PLAYERS 2
 
-// Credenciales válidas
-const char *USERNAME1 = "user1";
-const char *PASSWORD1 = "1234";
-const char *USERNAME2 = "user2";
-const char *PASSWORD2 = "5678";
+//usuarios validos 
+const char *valid_users[][2] = {
+    {"user1", "1234"},
+    {"user2", "5678"}
+};
+
+int authenticate_user(char *username, char *password) {
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (strcmp(username, valid_users[i][0]) == 0 && 
+            strcmp(password, valid_users[i][1]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * maneja la conexion con un cliente (jugador)
+ * @param client_socket socket del cliente
+ */
+void handle_client(int client_socket, int player_num) {
+    char buffer[1024] = {0};
+    char username[50], password[50];
+    
+    //recibe las credenciales
+    read(client_socket, buffer, 1024);
+    sscanf(buffer, "%s %s", username, password);
+    
+    //valida
+    if (authenticate_user(username, password)) {
+        write(client_socket, "OK", 2);
+        printf("Jugador %d autenticado: %s\n", player_num, username);
+        
+        // Esperar señal READY
+        char status[10];
+        read(client_socket, status, sizeof(status));
+        if (strcmp(status, "READY") == 0) {
+            printf("Jugador %d (%s) recibió READY\n", player_num, username);
+        }
+    } else {
+        write(client_socket, "ERROR", 5); //credenciales invalidas
+    }
+    
+    close(client_socket);
+    // El hijo debe terminar después de manejar al cliente
+    exit(0);
+}
 
 int main() {
-    int server_fd, new_socket;
+    int server_fd, client_sockets[MAX_PLAYERS] = {0};
     struct sockaddr_in address;
     int addrlen = sizeof(address);
-    char buffer[BUFFER_SIZE] = {0};
-    char response[100];
-
-    // Crear socket
+    int player_count = 0;
+    pid_t child_pids[MAX_PLAYERS] = {0};
+    
+    //crear el socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == 0) {
-        perror("Error al crear el socket");
-        exit(EXIT_FAILURE);
-    }
-
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
-
-    // Asociar socket al puerto
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Error al enlazar");
-        exit(EXIT_FAILURE);
-    }
-
-    // Escuchar conexiones entrantes
-    if (listen(server_fd, 5) < 0) {
-        perror("Error al escuchar");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Servidor esperando conexiones en el puerto %d...\n", PORT);
-
-    while (1) {
-        // Aceptar nueva conexión
-        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-        if (new_socket < 0) {
-            perror("Error al aceptar conexión");
-            continue;  // No detener el servidor si hay un error
-        }
-
-        // Crear un proceso hijo con fork
-        pid_t pid = fork();
+    
+    //configurar y aceptar las conexiones
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
+    listen(server_fd, MAX_PLAYERS);
+    
+    printf("Servidor esperando conexiones...\n");
+    
+    // Aceptar conexiones hasta tener MAX_PLAYERS
+    while (player_count < MAX_PLAYERS) {
+        client_sockets[player_count] = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
         
-        if (pid < 0) {
-            perror("Error al crear proceso hijo");
-            close(new_socket);
-            continue;
-        }
-
-        if (pid == 0) {  // Proceso hijo
-            close(server_fd);  // El hijo no necesita el socket del servidor
-            
-            // Leer datos del cliente
-            read(new_socket, buffer, sizeof(buffer));
-            printf("Datos recibidos: %s\n", buffer);
-
-            char user[50], pass[50];
-            sscanf(buffer, "%s %s", user, pass);
-
-            // Validar credenciales
-            if ((strcmp(user, USERNAME1) == 0 && strcmp(pass, PASSWORD1) == 0) ||
-                (strcmp(user, USERNAME2) == 0 && strcmp(pass, PASSWORD2) == 0)) {
-                strcpy(response, "OK");
-                printf("Cliente autenticado: %s\n", user);
-            } else {
-                strcpy(response, "ERROR");
-                printf("Autenticación fallida\n");
-            }
-
-            // Enviar respuesta al cliente
-            send(new_socket, response, strlen(response), 0);
-            printf("Respuesta enviada: %s\n", response);
-
-            close(new_socket);  // Cerrar conexión con el cliente
-            exit(0);  // Terminar proceso hijo
+        //crear proceso hijo para cada jugador
+        pid_t pid = fork();
+        if (pid == 0) { // Proceso hijo
+            close(server_fd);
+            handle_client(client_sockets[player_count], player_count+1);
+        } else if (pid > 0) { // Proceso padre
+            child_pids[player_count] = pid;
+            player_count++;
+            printf("Jugadores conectados: %d/%d\n", player_count, MAX_PLAYERS);
         } else {
-            // Proceso padre: cerrar el socket del cliente y seguir esperando más conexiones
-            close(new_socket);
+            perror("Error al crear proceso hijo");
+            close(client_sockets[player_count]);
+        }
+    }
+    
+    // cuando haya dos juagdores manda mensaje
+    if (player_count == MAX_PLAYERS) {
+        printf("¡Partida lista! Notificando a todos los jugadores...\n");
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            write(client_sockets[i], "READY", 5);
+            printf("Notificación enviada al jugador %d\n", i+1);
+            
+            // Esperar confirmación del hijo antes de cerrar
+            int status;
+            waitpid(child_pids[i], &status, 0);
         }
     }
 
-    close(server_fd);
+    // Mantener el servidor activo
+    while (1) {
+        sleep(1); 
+    }
+    
+    
     return 0;
 }
