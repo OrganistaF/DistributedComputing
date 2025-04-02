@@ -1,5 +1,4 @@
 import socket
-import pygame
 
 HOST = "127.18.2.2"
 PORT = 5000

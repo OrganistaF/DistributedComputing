@@ -63,13 +63,10 @@ draw_sound = None
 
 # Sounds
 try:
-    click_sound = mixer.Sound('click.wav')
-    win_sound = mixer.Sound('win.wav')
+    click_sound = mixer.Sound('click.mp3')
+    win_sound = mixer.Sound('win.mp3')
     draw_sound = mixer.Sound('draw.wav')
-    background_music = 'background.mp3'
-    mixer.music.load(background_music)
-    mixer.music.set_volume(0.5)
-    mixer.music.play(-1)  # Loop indefinitely
+    lose_sound = mixer.Sound('lose.mp3')
 except:
     print("Sound files not found. Continuing without sound.")
 
@@ -91,6 +88,8 @@ def load_image(name, scale=1.0):
 # Try to load images, use colored squares if not found // si no pongo imagenes no me sirve el login desoues de iniciar sesion
 x_image = load_image('img/x.png', 0.8)
 o_image = load_image('img/o.png', 0.8)
+
+
 class Button:
     def __init__(self, x, y, width, height, text, color, hover_color, text_color=WHITE, font=font_medium):
         self.rect = pygame.Rect(x, y, width, height)
@@ -175,10 +174,10 @@ def draw_login_screen():
     # Login button
     login_button = Button(SCREEN_WIDTH // 2 - 100, 430, 200, 40, "Login", BLUE, DARK_BLUE)
     login_button.draw(screen)
-
-    # Button "About"
-    about_button = Button(SCREEN_WIDTH // 2 - 100, 480, 200, 40, "About", GRAY, LIGHT_GRAY, BLACK, font_small)
-    about_button.draw(screen)
+    #
+    # # Button "About"
+    # about_button = Button(SCREEN_WIDTH // 2 - 100, 480, 200, 40, "About", GRAY, LIGHT_GRAY, BLACK, font_small)
+    # about_button.draw(screen)
 
     # message after login
     if message:
@@ -561,7 +560,7 @@ def play_sound(sound):
         pass
 
 
-#actualizados
+# actualizados
 # Main game loop
 clock = pygame.time.Clock() # Add this at initialization
 running = True
