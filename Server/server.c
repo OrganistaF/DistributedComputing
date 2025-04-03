@@ -12,11 +12,13 @@
 #define MAX_PLAYERS 2
 #define BOARD_SIZE 3
 
+// Valid users
 const char *valid_users[][2] = {
     {"user1", "1234"},
     {"user2", "5678"}
 };
 
+// Game state
 typedef enum {
     GAME_ACTIVE,
     GAME_WIN_X,
@@ -27,13 +29,13 @@ typedef enum {
 typedef struct {
     char board[BOARD_SIZE][BOARD_SIZE];
     char current_player;
+    int player_sockets[MAX_PLAYERS];
     struct sockaddr_in player_udp[MAX_PLAYERS];
     int active;
     pthread_mutex_t lock;
 } GameState;
 
 GameState game_state;
-int udp_fd;  // Global UDP socket
 
 int authenticate_user(char *username, char *password) {
     for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -54,26 +56,31 @@ void init_game() {
     }
     game_state.current_player = 'X';
     game_state.active = 0;
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        game_state.player_sockets[i] = -1;
+    }
     pthread_mutex_init(&game_state.lock, NULL);
 }
-
-// Add check_winner() and udp_handler() from previous corrected code
 
 void *handle_client(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
+
     char buffer[1024] = {0};
     char username[50], password[50];
 
     int bytes = read(client_socket, buffer, sizeof(buffer));
+    printf("Received from client: %s\n", buffer);
     sscanf(buffer, "%s %s", username, password);
 
     if (authenticate_user(username, password)) {
+        printf("Player authenticated: %s\n", username);
         write(client_socket, "OK\n", 3);
         char udp_info[50];
         snprintf(udp_info, sizeof(udp_info), "UDP_PORT %d\n", UDP_PORT);
         write(client_socket, udp_info, strlen(udp_info));
 
+        // Assign symbol based on connection order.
         int player_num;
         pthread_mutex_lock(&game_state.lock);
         player_num = game_state.active;
@@ -81,10 +88,16 @@ void *handle_client(void *arg) {
         pthread_mutex_unlock(&game_state.lock);
 
         char symbol_msg[20];
-        snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL %c\n", (player_num == 0) ? 'X' : 'O');
+        if (player_num == 0) {
+            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL X\n");
+        } else {
+            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL O\n");
+        }
         write(client_socket, symbol_msg, strlen(symbol_msg));
 
+        memset(buffer, 0, sizeof(buffer));
         read(client_socket, buffer, sizeof(buffer));
+        printf("Received UDP_READY: %s\n", buffer);
         int udp_port;
         sscanf(buffer, "UDP_READY %d", &udp_port);
 
@@ -95,16 +108,19 @@ void *handle_client(void *arg) {
 
         pthread_mutex_lock(&game_state.lock);
         game_state.player_udp[player_num] = udp_addr;
-
+        game_state.player_sockets[player_num] = socket(AF_INET, SOCK_DGRAM, 0);
+        printf("[Server] Player %d UDP ready on port %d\n", player_num, udp_port);
         if (game_state.active == MAX_PLAYERS) {
-            printf("Both players connected, sending START.\n");
+            printf("[Server] Both players connected, sending START message.\n");
             for (int i = 0; i < MAX_PLAYERS; i++) {
-                // Use the global udp_fd to send messages
-                sendto(udp_fd, "START\n", 6, 0,
+                char start_msg[] = "START\n";
+                printf("[Server] Sending START to player %d at %s:%d\n", i,
+                       inet_ntoa(game_state.player_udp[i].sin_addr),
+                       ntohs(game_state.player_udp[i].sin_port));
+                sendto(game_state.player_sockets[i], start_msg, strlen(start_msg), 0,
                        (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
             }
-            // Initialize the game only once here
-            game_state.current_player = 'X';
+            // Do NOT reinitialize game state here, so that turn information remains valid.
         }
         pthread_mutex_unlock(&game_state.lock);
     } else {
@@ -115,12 +131,12 @@ void *handle_client(void *arg) {
 }
 
 int main() {
-    int tcp_fd;
+    int tcp_fd, udp_fd;
     struct sockaddr_in tcp_addr, udp_addr;
+    int addrlen = sizeof(tcp_addr);
 
     init_game();
 
-    // TCP setup
     tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = INADDR_ANY;
@@ -128,22 +144,18 @@ int main() {
     bind(tcp_fd, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr));
     listen(tcp_fd, MAX_PLAYERS);
 
-    // UDP setup
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     udp_addr.sin_family = AF_INET;
     udp_addr.sin_addr.s_addr = INADDR_ANY;
     udp_addr.sin_port = htons(UDP_PORT);
     bind(udp_fd, (struct sockaddr *)&udp_addr, sizeof(udp_addr));
 
-    // Start UDP handler thread (as in previous corrected code)
-    pthread_t udp_thread;
-    pthread_create(&udp_thread, NULL, udp_handler, &udp_fd);
-    pthread_detach(udp_thread);
+    printf("Server waiting for connections...\n");
+    printf("TCP port: %d, UDP port: %d\n", TCP_PORT, UDP_PORT);
 
-    printf("Server running...\n");
     while (1) {
         int *client_socket = malloc(sizeof(int));
-        *client_socket = accept(tcp_fd, NULL, NULL);
+        *client_socket = accept(tcp_fd, (struct sockaddr *)&tcp_addr, (socklen_t*)&addrlen);
         pthread_t tid;
         pthread_create(&tid, NULL, handle_client, client_socket);
         pthread_detach(tid);

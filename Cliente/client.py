@@ -64,12 +64,13 @@ class TicTacToeClient:
             try:
                 data, addr = self.udp_socket.recvfrom(1024)
                 message = data.decode().strip()
-                print(f"Received UDP message: {message}")
+                print(f"[UDP Listener] Received UDP message: '{message}' from {addr}")
 
                 if message == "START":
                     self.game_active = True
-                    self.current_turn = 'X'  # Explicitly set the turn
-                    print("Game started! Current turn: X")
+                    self.current_turn = 'X'  # Game always starts with X
+                    print(
+                        f"[UDP Listener] Game started! You are player {self.player_symbol}. Current turn set to: {self.current_turn}")
                     if self.gui_callback:
                         self.gui_callback('start', None, None, None)
 
