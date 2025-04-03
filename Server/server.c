@@ -35,6 +35,7 @@ typedef struct {
 } GameState;
 
 GameState game_state;
+int udp_fd;  // Global UDP socket
 
 int authenticate_user(char *username, char *password) {
     for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -58,6 +59,36 @@ void init_game() {
     pthread_mutex_init(&game_state.lock, NULL);
 }
 
+// Simple check_winner implementation that only checks for a draw
+void check_winner(int udp_fd) {
+    bool draw = true;
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        for (int j = 0; j < BOARD_SIZE; j++) {
+            if (game_state.board[i][j] == ' ') {
+                draw = false;
+                break;
+            }
+        }
+        if (!draw) break;
+    }
+
+    // For demonstration, if the board is full, we declare a draw.
+    if (draw) {
+        char msg[50];
+        // We'll use 0,0 as dummy coordinates and 'D' as winner for draw.
+        snprintf(msg, sizeof(msg), "GAME_OVER %d %d %c\n", 0, 0, 'D');
+        // Broadcast the game-over message
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            if (game_state.player_udp[i].sin_port != 0) {
+                sendto(udp_fd, msg, strlen(msg), 0,
+                       (struct sockaddr*)&game_state.player_udp[i],
+                       sizeof(game_state.player_udp[i]));
+            }
+        }
+        init_game(); // Reset for new game
+    }
+}
+
 void broadcast_message(int udp_fd, const char *message) {
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (game_state.player_udp[i].sin_port != 0) {
@@ -68,34 +99,14 @@ void broadcast_message(int udp_fd, const char *message) {
     }
 }
 
-void check_winner(int udp_fd) {
-    // Check rows, columns, and diagonals for a winner
-    char winner = ' ';
-    // ... (Implement win checking logic here)
-
-    GameResult result = GAME_ACTIVE;
-    if (winner != ' ') {
-        result = (winner == 'X') ? GAME_WIN_X : GAME_WIN_O;
-    } else if (/* Check for draw */) {
-        result = GAME_DRAW;
-    }
-
-    if (result != GAME_ACTIVE) {
-        char msg[50];
-        snprintf(msg, sizeof(msg), "GAME_OVER %d %d %c\n", row, col, winner);
-        broadcast_message(udp_fd, msg);
-        init_game(); // Reset for new game
-    }
-}
-
 void *udp_listener(void *arg) {
-    int udp_fd = *(int *)arg;
+    int udp_sock = *(int *)arg;
     char buffer[1024];
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
     while (1) {
-        ssize_t bytes = recvfrom(udp_fd, buffer, sizeof(buffer)-1, 0,
+        ssize_t bytes = recvfrom(udp_sock, buffer, sizeof(buffer)-1, 0,
                                 (struct sockaddr*)&client_addr, &addr_len);
         if (bytes > 0) {
             buffer[bytes] = '\0';
@@ -105,7 +116,7 @@ void *udp_listener(void *arg) {
                 int row, col;
                 char symbol;
                 sscanf(buffer, "MOVE %d %d %c", &row, &col, &symbol);
-                if (row >= 0 && row < BOARD_SIZE && col >=0 && col < BOARD_SIZE &&
+                if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE &&
                     game_state.board[row][col] == ' ' &&
                     game_state.current_player == symbol) {
                     game_state.board[row][col] = symbol;
@@ -113,8 +124,8 @@ void *udp_listener(void *arg) {
                     // Broadcast the move to all players
                     char msg[50];
                     snprintf(msg, sizeof(msg), "MOVE %d %d %c\n", row, col, symbol);
-                    broadcast_message(udp_fd, msg);
-                    check_winner(udp_fd);
+                    broadcast_message(udp_sock, msg);
+                    check_winner(udp_sock);
                 }
             }
             pthread_mutex_unlock(&game_state.lock);
@@ -171,7 +182,7 @@ void *handle_client(void *arg) {
 }
 
 int main() {
-    int tcp_fd, udp_fd;
+    int tcp_fd;
     struct sockaddr_in addr;
     init_game();
 
@@ -183,7 +194,7 @@ int main() {
     bind(tcp_fd, (struct sockaddr*)&addr, sizeof(addr));
     listen(tcp_fd, MAX_PLAYERS);
 
-    // UDP setup
+    // UDP setup using global udp_fd
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     addr.sin_port = htons(UDP_PORT);
     bind(udp_fd, (struct sockaddr*)&addr, sizeof(addr));
