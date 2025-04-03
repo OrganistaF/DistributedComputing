@@ -1,6 +1,5 @@
 import socket
 import threading
-import pygame
 
 
 class TicTacToeClient:
