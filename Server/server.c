@@ -116,7 +116,7 @@ void handle_move(int player_num, int row, int col) {
         char move_msg[64];
         if (result == GAME_ACTIVE) {
             game_state.current_player = (game_state.current_player == 'X') ? 'O' : 'X';
-            snprintf(move_msg, sizeof(move_msg), "MOVE %d %d %c", row, col, game_state.board[row][col]);
+            snprintf(move_msg, sizeof(move_msg), "MOVE %d %d %c\n", row, col, game_state.board[row][col]);
         } else {
             const char* result_str;
             switch(result) {
@@ -125,14 +125,14 @@ void handle_move(int player_num, int row, int col) {
                 case GAME_DRAW: result_str = "DRAW"; break;
                 default: result_str = "UNKNOWN";
             }
-            snprintf(move_msg, sizeof(move_msg), "GAME_OVER %s %d %d %c", result_str, row, col, game_state.board[row][col]);
+            snprintf(move_msg, sizeof(move_msg), "GAME_OVER %s %d %d %c\n", result_str, row, col, game_state.board[row][col]);
             game_state.active = 0;
         }
 
         for (int i = 0; i < MAX_PLAYERS; i++) {
             if (game_state.player_sockets[i] != -1) {
                 sendto(game_state.player_sockets[i], move_msg, strlen(move_msg), 0,
-                      (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
+                       (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
             }
         }
     }
@@ -142,25 +142,30 @@ void handle_client(int client_socket, int player_num) {
     char buffer[1024] = {0};
     char username[50], password[50];
 
+    // Read credentials (assumes client sends a newline-terminated string)
     read(client_socket, buffer, 1024);
     sscanf(buffer, "%s %s", username, password);
 
     if (authenticate_user(username, password)) {
-        write(client_socket, "OK", 2);
+        // Send OK with newline delimiter
+        write(client_socket, "OK\n", 3);
         printf("Player %d authenticated: %s\n", player_num, username);
 
+        // Send UDP port info with newline
         char udp_info[50];
-        snprintf(udp_info, sizeof(udp_info), "UDP_PORT %d", UDP_PORT);
+        snprintf(udp_info, sizeof(udp_info), "UDP_PORT %d\n", UDP_PORT);
         write(client_socket, udp_info, strlen(udp_info));
 
+        // Read the UDP_READY message (newline terminated)
+        memset(buffer, 0, sizeof(buffer));
         read(client_socket, buffer, 1024);
+        int udp_port;
+        sscanf(buffer, "UDP_READY %d", &udp_port);
 
+        // Set up the UDP address for the player
         struct sockaddr_in udp_addr;
         socklen_t addr_len = sizeof(udp_addr);
         getpeername(client_socket, (struct sockaddr*)&udp_addr, &addr_len);
-
-        int udp_port;
-        sscanf(buffer, "UDP_READY %d", &udp_port);
         udp_addr.sin_port = htons(udp_port);
 
         game_state.player_udp[player_num] = udp_addr;
@@ -172,14 +177,14 @@ void handle_client(int client_socket, int player_num) {
         if (game_state.active == MAX_PLAYERS) {
             printf("Game starting!\n");
             for (int i = 0; i < MAX_PLAYERS; i++) {
-                char start_msg[] = "START";
+                char start_msg[] = "START\n";
                 sendto(game_state.player_sockets[i], start_msg, strlen(start_msg), 0,
-                      (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
+                       (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
             }
             init_game();
         }
     } else {
-        write(client_socket, "ERROR", 5);
+        write(client_socket, "ERROR\n", 6);
     }
 
     close(client_socket);

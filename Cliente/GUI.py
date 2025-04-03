@@ -3,11 +3,11 @@ import sys
 from pygame import mixer
 from client import TicTacToeClient
 
-
 # Initialize pygame and mixer
 pygame.init()
 mixer.init()
 
+# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
@@ -26,7 +26,6 @@ GAME = 2
 END = 3
 ABOUT = 4
 
-
 # Screen dimensions
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
@@ -42,7 +41,6 @@ font_large = pygame.font.Font(None, 72)
 font_medium = pygame.font.Font(None, 48)
 font_small = pygame.font.Font(None, 36)
 font_tiny = pygame.font.Font(None, 24)
-
 
 
 class Button:
@@ -74,14 +72,29 @@ class Button:
         return False
 
 
+def load_image(name, scale=1.0):
+    try:
+        image = pygame.image.load(name)
+        if scale != 1.0:
+            new_width = int(image.get_width() * scale)
+            new_height = int(image.get_height() * scale)
+            image = pygame.transform.scale(image, (new_width, new_height))
+        return image
+    except:
+        print(f"Image {name} not found. Using placeholder.")
+        surf = pygame.Surface((100, 100))
+        surf.fill(PURPLE if "x" in name.lower() else YELLOW if "o" in name.lower() else BLUE)
+        return surf
+
 
 class TicTacToeGUI:
     def __init__(self):
-        self.draw_sound = None
-        self.win_sound = None
-        self.click_sound = None
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption('Tic Tac Toe')
+
+        self.lose_sound = None
+        self.win_sound = None
+        self.click_sound = None
 
         # Game variables
         self.current_player = 'X'
@@ -97,34 +110,20 @@ class TicTacToeGUI:
         self.message = ""
 
         # Images
-        self.x_image = self.load_image('img/x.png', 0.8)
-        self.o_image = self.load_image('img/o.png', 0.8)
+        self.x_image = load_image('img/x.png', 0.8)
+        self.o_image = load_image('img/o.png', 0.8)
 
+        # Sounds
         try:
-            click_sound = mixer.Sound('./sfx/click.mp3')
-            win_sound = mixer.Sound('./sfx/win.mp3')
-            draw_sound = mixer.Sound('./sfx/draw.wav')
-            lose_sound = mixer.Sound('./sfx/lose.mp3')
+            self.click_sound = mixer.Sound('sfx/click.mp3')
+            self.win_sound = mixer.Sound('sfx/win.mp3')
+            self.lose_sound = mixer.Sound('sfx/lose.mp3')
         except:
-          print("Sound files not found. Continuing without sound.")
+            print("Sound files not found. Continuing without sound.")
 
         # Network client
         self.client = TicTacToeClient()
         self.client.gui_callback = self.handle_network_event
-
-    def load_image(self, name, scale=1.0):
-        try:
-            image = pygame.image.load(name)
-            if scale != 1.0:
-                new_width = int(image.get_width() * scale)
-                new_height = int(image.get_height() * scale)
-                image = pygame.transform.scale(image, (new_width, new_height))
-            return image
-        except:
-            print(f"Image {name} not found. Using placeholder.")
-            surf = pygame.Surface((100, 100))
-            surf.fill(PURPLE if "x" in name.lower() else YELLOW if "o" in name.lower() else BLUE)
-            return surf
 
     def handle_network_event(self, event_type, *args):
         if event_type == 'start':
