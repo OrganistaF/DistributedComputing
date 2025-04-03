@@ -4,11 +4,11 @@ import os
 from pygame import mixer
 from client import TicTacToeClient
 
+
 # Initialize pygame and mixer
 pygame.init()
 mixer.init()
 
-# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
@@ -27,10 +27,15 @@ GAME = 2
 END = 3
 ABOUT = 4
 
+
 # Screen dimensions
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 BOARD_SIZE = 3
+
+# Create screen
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption('Tic Tac Toe')
 
 # Fonts
 font_xl = pygame.font.Font(None, 100)
@@ -39,34 +44,34 @@ font_medium = pygame.font.Font(None, 48)
 font_small = pygame.font.Font(None, 36)
 font_tiny = pygame.font.Font(None, 24)
 
+# Game variables
+current_player = 'X'
+board = [['' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+game_state = LOGIN
+player_name = ''
+winner = None
+game_mode = None  # 'local' or 'online'
+current_user = ""
+username = ""
+password = ""
+active_input = "username"
+message = ""
+click_sound = None
+win_sound = None
+draw_sound = None
 
-class Button:
-    def __init__(self, x, y, width, height, text, color, hover_color, text_color=WHITE, font=font_medium):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.text = text
-        self.color = color
-        self.hover_color = hover_color
-        self.text_color = text_color
-        self.font = font
-        self.is_hovered = False
+# Sounds
+try:
+    click_sound = mixer.Sound('click.mp3')
+    win_sound = mixer.Sound('win.mp3')
+    draw_sound = mixer.Sound('draw.wav')
+    lose_sound = mixer.Sound('lose.mp3')
+except:
+    print("Sound files not found. Continuing without sound.")
 
-    def draw(self, surface):
-        color = self.hover_color if self.is_hovered else self.color
-        pygame.draw.rect(surface, color, self.rect, border_radius=10)
-        pygame.draw.rect(surface, BLACK, self.rect, 2, border_radius=10)  # Border
+x_image = load_image('img/x.png', 0.8)
+o_image = load_image('img/o.png', 0.8)
 
-        text_surf = self.font.render(self.text, True, self.text_color)
-        text_rect = text_surf.get_rect(center=self.rect.center)
-        surface.blit(text_surf, text_rect)
-
-    def check_hover(self, pos):
-        self.is_hovered = self.rect.collidepoint(pos)
-        return self.is_hovered
-
-    def is_clicked(self, pos, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            return self.rect.collidepoint(pos)
-        return False
 
 
 class TicTacToeGUI:
@@ -91,17 +96,13 @@ class TicTacToeGUI:
         self.x_image = self.load_image('img/x.png', 0.8)
         self.o_image = self.load_image('img/o.png', 0.8)
 
-        # Sounds
-        try:
-            self.click_sound = mixer.Sound('click.wav')
-            self.win_sound = mixer.Sound('win.wav')
-            self.draw_sound = mixer.Sound('draw.wav')
-            background_music = 'background.mp3'
-            mixer.music.load(background_music)
-            mixer.music.set_volume(0.5)
-            mixer.music.play(-1)
+         try:
+          click_sound = mixer.Sound('click.mp3')
+          win_sound = mixer.Sound('win.mp3')
+          draw_sound = mixer.Sound('draw.wav')
+          lose_sound = mixer.Sound('lose.mp3')
         except:
-            print("Sound files not found. Continuing without sound.")
+          print("Sound files not found. Continuing without sound.")
 
         # Network client
         self.client = TicTacToeClient()
