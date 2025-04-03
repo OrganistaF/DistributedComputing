@@ -1,15 +1,14 @@
 import pygame
-import pygame
 import sys
 import os
 from pygame import mixer
-from client import send_credentials  # Importar la función del cliente
+from client import TicTacToeClient
+
 
 # Initialize pygame and mixer
 pygame.init()
 mixer.init()
 
-# Colores
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
@@ -70,575 +69,520 @@ try:
 except:
     print("Sound files not found. Continuing without sound.")
 
-# Load assets
-def load_image(name, scale=1.0):
-    try:
-        image = pygame.image.load(name)
-        if scale != 1.0:
-            new_width = int(image.get_width() * scale)
-            new_height = int(image.get_height() * scale)
-            image = pygame.transform.scale(image, (new_width, new_height))
-        return image
-    except:
-        print(f"Image {name} not found. Using placeholder.")
-        surf = pygame.Surface((100, 100))
-        surf.fill(PURPLE if "x" in name.lower() else YELLOW if "o" in name.lower() else BLUE)
-        return surf
-
-# Try to load images, use colored squares if not found // si no pongo imagenes no me sirve el login desoues de iniciar sesion
 x_image = load_image('img/x.png', 0.8)
 o_image = load_image('img/o.png', 0.8)
 
 
-class Button:
-    def __init__(self, x, y, width, height, text, color, hover_color, text_color=WHITE, font=font_medium):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.text = text
-        self.color = color
-        self.hover_color = hover_color
-        self.text_color = text_color
-        self.font = font
-        self.is_hovered = False
 
-    def draw(self, surface):
-        color = self.hover_color if self.is_hovered else self.color
-        pygame.draw.rect(surface, color, self.rect, border_radius=10)
-        pygame.draw.rect(surface, BLACK, self.rect, 2, border_radius=10)  # Border
+class TicTacToeGUI:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption('Tic Tac Toe')
 
-        text_surf = self.font.render(self.text, True, self.text_color)
-        text_rect = text_surf.get_rect(center=self.rect.center)
-        surface.blit(text_surf, text_rect)
+        # Game variables
+        self.current_player = 'X'
+        self.board = [['' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+        self.game_state = LOGIN
+        self.player_name = ''
+        self.winner = None
+        self.game_mode = None
+        self.current_user = ""
+        self.username = ""
+        self.password = ""
+        self.active_input = "username"
+        self.message = ""
 
-    def check_hover(self, pos):
-        self.is_hovered = self.rect.collidepoint(pos)
-        return self.is_hovered
+        # Images
+        self.x_image = self.load_image('img/x.png', 0.8)
+        self.o_image = self.load_image('img/o.png', 0.8)
 
-    def is_clicked(self, pos, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            return self.rect.collidepoint(pos)
-        return False
-#
-# # Configuración de pantalla
-# WIDTH, HEIGHT = 400, 300
-# screen = pygame.display.set_mode((WIDTH, HEIGHT))
-# pygame.display.set_caption("Inicio de Sesión")
-#
-# # Fuente
-# font = pygame.font.Font(None, 30)
-#
-# # Variables de los campos de entrada
-# username = ""
-# password = ""
-# active_input = "username"  # Campo activo
-# message = ""
-# screen_state = "login"  # "login" o "acerca_de"
+         try:
+          click_sound = mixer.Sound('click.mp3')
+          win_sound = mixer.Sound('win.mp3')
+          draw_sound = mixer.Sound('draw.wav')
+          lose_sound = mixer.Sound('lose.mp3')
+        except:
+          print("Sound files not found. Continuing without sound.")
 
-def draw_login_screen():
-    """Dibuja la pantalla de inicio de sesión"""
-    screen.fill(WHITE)
+        # Network client
+        self.client = TicTacToeClient()
+        self.client.gui_callback = self.handle_network_event
 
-    # Semi-transparent overlay
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 128))
-    screen.blit(overlay, (0, 0))
+    def load_image(self, name, scale=1.0):
+        try:
+            image = pygame.image.load(name)
+            if scale != 1.0:
+                new_width = int(image.get_width() * scale)
+                new_height = int(image.get_height() * scale)
+                image = pygame.transform.scale(image, (new_width, new_height))
+            return image
+        except:
+            print(f"Image {name} not found. Using placeholder.")
+            surf = pygame.Surface((100, 100))
+            surf.fill(PURPLE if "x" in name.lower() else YELLOW if "o" in name.lower() else BLUE)
+            return surf
 
-    # Login box
-    login_box = pygame.Rect(SCREEN_WIDTH // 2 - 150, 180, 300, 300)
-    pygame.draw.rect(screen, WHITE, login_box, border_radius=15)
-    pygame.draw.rect(screen, BLACK, login_box, 2, border_radius=15)
+    def handle_network_event(self, event_type, *args):
+        if event_type == 'start':
+            self.game_state = GAME
+            self.reset_game()
+        elif event_type == 'move':
+            row, col, symbol = args
+            self.board[row][col] = symbol
+            self.current_player = 'O' if symbol == 'X' else 'X'
+        elif event_type == 'game_over':
+            result, row, col, symbol = args
+            self.board[row][col] = symbol
+            self.winner = result if result != 'DRAW' else 'draw'
+            self.game_state = END
 
-    # Title
-    title = font_medium.render("Login", True, BLACK)
-    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 210))
-    screen.blit(title, title_rect)
+    def reset_game(self):
+        self.board = [['' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+        self.current_player = 'X'
+        self.winner = None
 
-    # User
-    username_label = font_small.render("Username:", True, BLACK)
-    screen.blit(username_label, (SCREEN_WIDTH // 2 - 130, 260))
+    def check_winner(self):
+        """Check if there's a winner or a draw"""
+        # Check rows
+        for row in range(BOARD_SIZE):
+            if self.board[row][0] == self.board[row][1] == self.board[row][2] != '':
+                return self.board[row][0]
 
-    username_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 290, 260, 40)
-    pygame.draw.rect(screen, LIGHT_GRAY if active_input == "username" else WHITE, username_rect, border_radius=5)
-    pygame.draw.rect(screen, DARK_BLUE if active_input == "username" else BLACK, username_rect, 2, border_radius=5)
-    
-    # Password
-    password_label = font_small.render("Password:", True, BLACK)
-    screen.blit(password_label, (SCREEN_WIDTH // 2 - 130, 340))
-
-    password_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 370, 260, 40)
-    pygame.draw.rect(screen, LIGHT_GRAY if active_input == "password" else WHITE, password_rect, border_radius=5)
-    pygame.draw.rect(screen, DARK_BLUE if active_input == "password" else BLACK, password_rect, 2, border_radius=5)
-
-    password_text = font_small.render("*" * len(password), True, BLACK)
-    screen.blit(password_text, (password_rect.x + 10, password_rect.y + 10))
-
-    # Login button
-    login_button = Button(SCREEN_WIDTH // 2 - 100, 430, 200, 40, "Login", BLUE, DARK_BLUE)
-    login_button.draw(screen)
-    #
-    # # Button "About"
-    # about_button = Button(SCREEN_WIDTH // 2 - 100, 480, 200, 40, "About", GRAY, LIGHT_GRAY, BLACK, font_small)
-    # about_button.draw(screen)
-
-    # message after login
-    if message:
-        color = GREEN if message == "Login successful" else RED
-        msg_text = font_small.render(message, True, color)
-        msg_rect = msg_text.get_rect(center=(SCREEN_WIDTH // 2, 530))
-        screen.blit(msg_text, msg_rect)
-
-    return login_button, about_button
-
-
-def draw_about_screen():
-    """Dibuja la pantalla de 'Acerca de'"""
-    # screen.blit(background_img, (0, 0))
-    screen.fill(WHITE)
-
-    # Semi-transparent overlay
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 128))
-    screen.blit(overlay, (0, 0))
-
-    # Welcome message
-    welcome_text = font_large.render(f"Welcome, {current_user}!", True, WHITE)
-    welcome_rect = welcome_text.get_rect(center=(SCREEN_WIDTH // 2, 100))
-    screen.blit(welcome_text, welcome_rect)
-
-    # Game title
-    title = font_xl.render("Tic Tac Toe", True, WHITE)
-    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 180))
-    screen.blit(title, title_rect)
-
-    # Buttons
-    local_button = Button(SCREEN_WIDTH // 2 - 150, 300, 300, 60, "Local Game", BLUE, DARK_BLUE)
-    online_button = Button(SCREEN_WIDTH // 2 - 150, 380, 300, 60, "Online Game", GREEN, (0, 200, 0))
-    about_button = Button(SCREEN_WIDTH // 2 - 150, 460, 300, 60, "About", PURPLE, (100, 0, 100))
-    logout_button = Button(SCREEN_WIDTH // 2 - 150, 540, 300, 40, "Logout", RED, (200, 0, 0), font=font_small)
-
-    local_button.draw(screen)
-    online_button.draw(screen)
-    about_button.draw(screen)
-    logout_button.draw(screen)
-
-    return local_button, online_button, about_button, logout_button
-
-
-def draw_menu_screen():
-    """Draw the main menu screen"""
-    # screen.blit(background_img, (0, 0))
-    screen.fill(WHITE)
-
-    # Semi-transparent overlay
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 128))
-    screen.blit(overlay, (0, 0))
-
-    # Welcome message
-    welcome_text = font_large.render(f"Welcome, {current_user}!", True, WHITE)
-    welcome_rect = welcome_text.get_rect(center=(SCREEN_WIDTH // 2, 100))
-    screen.blit(welcome_text, welcome_rect)
-
-    # Game title
-    title = font_xl.render("Tic Tac Toe", True, WHITE)
-    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 180))
-    screen.blit(title, title_rect)
-
-    # Buttons
-    local_button = Button(SCREEN_WIDTH // 2 - 150, 300, 300, 60, "Local Game", BLUE, DARK_BLUE)
-    online_button = Button(SCREEN_WIDTH // 2 - 150, 380, 300, 60, "Online Game", GREEN, (0, 200, 0))
-    about_button = Button(SCREEN_WIDTH // 2 - 150, 460, 300, 60, "About", PURPLE, (100, 0, 100))
-    logout_button = Button(SCREEN_WIDTH // 2 - 150, 540, 300, 40, "Logout", RED, (200, 0, 0), font=font_small)
-
-    local_button.draw(screen)
-    online_button.draw(screen)
-    about_button.draw(screen)
-    logout_button.draw(screen)
-
-    return local_button, online_button, about_button, logout_button
-
-
-def draw_about_screen():
-    """Draw the about screen"""
-    # screen.blit(background_img, (0, 0))
-    screen.fill(WHITE)
-
-    # Semi-transparent overlay
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 180))
-    screen.blit(overlay, (0, 0))
-
-    # About box
-    about_box = pygame.Rect(100, 100, SCREEN_WIDTH - 200, SCREEN_HEIGHT - 200)
-    pygame.draw.rect(screen, WHITE, about_box, border_radius=15)
-    pygame.draw.rect(screen, BLACK, about_box, 2, border_radius=15)
-
-    # Title
-    title = font_large.render("About Tic Tac Toe", True, BLACK)
-    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 150))
-    screen.blit(title, title_rect)
-
-    # Content
-    lines = [
-        "Tic Tac Toe Game",
-        "Version 1.0",
-        "",
-        "Created with Pygame",
-        "",
-        "This game features:",
-        "- Local multiplayer",
-        "- Online multiplayer (coming soon)",
-        "- Beautiful UI",
-        "- Sound effects",
-        "Add teamates, proffesor, and subject",
-        "Developed as a learning project"
-    ]
-
-    for i, line in enumerate(lines):
-        text = font_small.render(line, True, BLACK)
-        screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 220 + i * 30))
-
-    # Back button
-    back_button = Button(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 120, 200, 50, "Back", BLUE, DARK_BLUE)
-    back_button.draw(screen)
-
-    return back_button
-
-
-def draw_game_screen():
-    """Draw the game screen"""
-    screen.fill(WHITE)
-
-    # Draw game board
-    board_size = 400
-    board_x = (SCREEN_WIDTH - board_size) // 2
-    board_y = (SCREEN_HEIGHT - board_size) // 2
-
-    # Draw board background
-    pygame.draw.rect(screen, LIGHT_GRAY, (board_x, board_y, board_size, board_size))
-
-    # Draw grid lines
-    cell_size = board_size // BOARD_SIZE
-    for i in range(1, BOARD_SIZE):
-        # Vertical lines
-        pygame.draw.line(screen, BLACK, (board_x + i * cell_size, board_y),
-                         (board_x + i * cell_size, board_y + board_size), 3)
-        # Horizontal lines
-        pygame.draw.line(screen, BLACK, (board_x, board_y + i * cell_size),
-                         (board_x + board_size, board_y + i * cell_size), 3)
-
-    # Draw X's and O's
-    for row in range(BOARD_SIZE):
+        # Check columns
         for col in range(BOARD_SIZE):
-            if board[row][col] == 'X':
-                x_pos = board_x + col * cell_size + cell_size // 2
-                y_pos = board_y + row * cell_size + cell_size // 2
-                if x_image:
-                    x_rect = x_image.get_rect(center=(x_pos, y_pos))
-                    screen.blit(x_image, x_rect)
-                else:
-                    pygame.draw.line(screen, RED, (x_pos - 30, y_pos - 30), (x_pos + 30, y_pos + 30), 5)
-                    pygame.draw.line(screen, RED, (x_pos + 30, y_pos - 30), (x_pos - 30, y_pos + 30), 5)
-            elif board[row][col] == 'O':
-                x_pos = board_x + col * cell_size + cell_size // 2
-                y_pos = board_y + row * cell_size + cell_size // 2
-                if o_image:
-                    o_rect = o_image.get_rect(center=(x_pos, y_pos))
-                    screen.blit(o_image, o_rect)
-                else:
-                    pygame.draw.circle(screen, BLUE, (x_pos, y_pos), 30, 5)
+            if self.board[0][col] == self.board[1][col] == self.board[2][col] != '':
+                return self.board[0][col]
 
-    # Draw current player indicator
-    player_text = font_medium.render(f"Current Player: {current_player}", True, BLACK)
-    screen.blit(player_text, (20, 20))
+        # Check diagonals
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] != '':
+            return self.board[0][0]
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] != '':
+            return self.board[0][2]
 
-    # Draw back button
-    back_button = Button(20, SCREEN_HEIGHT - 70, 150, 50, "Menu", RED, (200, 0, 0))
-    back_button.draw(screen)
+        # Check for draw
+        if all(self.board[row][col] != '' for row in range(BOARD_SIZE) for col in range(BOARD_SIZE)):
+            return 'draw'
 
-    return back_button
+        return None
 
+    def play_sound(self, sound):
+        """Play a sound effect if available"""
+        try:
+            sound.play()
+        except:
+            pass
 
-def draw_end_screen():
-    """Draw the end game screen"""
-    # Semi-transparent overlay
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 180))
-    screen.blit(overlay, (0, 0))
+    def draw_login_screen(self):
+        """Draw the login screen"""
+        self.screen.fill(WHITE)
 
-    # Result box
-    result_box = pygame.Rect(SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2 - 150, 400, 300)
-    pygame.draw.rect(screen, WHITE, result_box, border_radius=15)
-    pygame.draw.rect(screen, BLACK, result_box, 2, border_radius=15)
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
 
-    # Result text
-    if winner == 'draw':
-        result_text = font_large.render("It's a Draw!", True, BLACK)
-    else:
-        result_text = font_large.render(f"Player {winner} Wins!", True, BLACK)
+        # Login box
+        login_box = pygame.Rect(SCREEN_WIDTH // 2 - 150, 180, 300, 300)
+        pygame.draw.rect(self.screen, WHITE, login_box, border_radius=15)
+        pygame.draw.rect(self.screen, BLACK, login_box, 2, border_radius=15)
 
-    result_rect = result_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
-    screen.blit(result_text, result_rect)
+        # Title
+        title = font_medium.render("Login", True, BLACK)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 210))
+        self.screen.blit(title, title_rect)
 
-    # Buttons
-    menu_button = Button(SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT // 2 + 50, 150, 50, "Main Menu", BLUE, DARK_BLUE)
-    replay_button = Button(SCREEN_WIDTH // 2 + 30, SCREEN_HEIGHT // 2 + 50, 150, 50, "Play Again", GREEN, (0, 200, 0))
+        # User
+        username_label = font_small.render("Username:", True, BLACK)
+        self.screen.blit(username_label, (SCREEN_WIDTH // 2 - 130, 260))
 
-    menu_button.draw(screen)
-    replay_button.draw(screen)
-
-    return menu_button, replay_button
-
-
-def check_winner():
-    """Check if there's a winner or a draw"""
-    # Check rows
-    for row in range(BOARD_SIZE):
-        if board[row][0] == board[row][1] == board[row][2] != '':
-            return board[row][0]
-
-    # Check columns
-    for col in range(BOARD_SIZE):
-        if board[0][col] == board[1][col] == board[2][col] != '':
-            return board[0][col]
-
-    # Check diagonals
-    if board[0][0] == board[1][1] == board[2][2] != '':
-        return board[0][0]
-    if board[0][2] == board[1][1] == board[2][0] != '':
-        return board[0][2]
-
-    # Check for draw
-    for row in range(BOARD_SIZE):
-        for col in range(BOARD_SIZE):
-            if board[row][col] == '':
-                return None  # Game still ongoing
-
-    return 'draw'  # Draw
-
-
-def reset_game():
-    """Reset the game state"""
-    global board, current_player, winner
-    board = [['' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-    current_player = 'X'
-    winner = None
-
-
-def handle_login_events(event):
-    """Handle events for the login screen"""
-
-    global username, password, active_input, message
-    
-    if event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_TAB:
-            active_input = "password" if active_input == "username" else "username"
-        elif event.key == pygame.K_BACKSPACE:
-            if active_input == "username":
-                username = username[:-1]
-            else:
-                password = password[:-1]
-        else:
-            # Solo permitir caracteres visibles (no teclas especiales)
-            if event.unicode.isprintable():
-                if active_input == "username" and len(username) < 20:
-                    username += event.unicode
-                elif active_input == "password" and len(password) < 20:
-                    password += event.unicode
-    
-    elif event.type == pygame.MOUSEBUTTONDOWN:
-        x, y = event.pos
-        # Selección de campo de texto
         username_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 290, 260, 40)
+        pygame.draw.rect(self.screen, LIGHT_GRAY if self.active_input == "username" else WHITE,
+                         username_rect, border_radius=5)
+        pygame.draw.rect(self.screen, DARK_BLUE if self.active_input == "username" else BLACK,
+                         username_rect, 2, border_radius=5)
+
+        # Password
+        password_label = font_small.render("Password:", True, BLACK)
+        self.screen.blit(password_label, (SCREEN_WIDTH // 2 - 130, 340))
+
         password_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 370, 260, 40)
-        
-        if username_rect.collidepoint(x, y):
-            active_input = "username"
-        elif password_rect.collidepoint(x, y):
-            active_input = "password"
+        pygame.draw.rect(self.screen, LIGHT_GRAY if self.active_input == "password" else WHITE,
+                         password_rect, border_radius=5)
+        pygame.draw.rect(self.screen, DARK_BLUE if self.active_input == "password" else BLACK,
+                         password_rect, 2, border_radius=5)
 
+        password_text = font_small.render("*" * len(self.password), True, BLACK)
+        self.screen.blit(password_text, (password_rect.x + 10, password_rect.y + 10))
 
-def handle_menu_events(event, buttons):
-    """Handle events for the menu screen"""
-    global game_state, game_mode
+        # Login button
+        login_button = Button(SCREEN_WIDTH // 2 - 100, 430, 200, 40, "Login", BLUE, DARK_BLUE)
+        login_button.draw(self.screen)
 
-    local_button, online_button, about_button, logout_button = buttons
+        # Button "About"
+        about_button = Button(SCREEN_WIDTH // 2 - 100, 480, 200, 40, "About", GRAY, LIGHT_GRAY, BLACK, font_small)
+        about_button.draw(self.screen)
 
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        pos = pygame.mouse.get_pos()
-        if local_button.rect.collidepoint(pos):
-            game_mode = 'local'
-            reset_game()
-            game_state = GAME
-            play_sound(click_sound)
-        elif online_button.rect.collidepoint(pos):
-            # Online mode not fully implemented yet
-            game_mode = 'online'
-            reset_game()
-            game_state = GAME
-            play_sound(click_sound)
-        elif about_button.rect.collidepoint(pos):
-            game_state = ABOUT
-            play_sound(click_sound)
-        elif logout_button.rect.collidepoint(pos):
-            game_state = LOGIN
-            play_sound(click_sound)
+        # Message after login
+        if self.message:
+            color = GREEN if self.message == "Login successful" else RED
+            msg_text = font_small.render(self.message, True, color)
+            msg_rect = msg_text.get_rect(center=(SCREEN_WIDTH // 2, 530))
+            self.screen.blit(msg_text, msg_rect)
 
+        return login_button, about_button
 
-def handle_about_events(event, back_button):
-    """Handle events for the about screen"""
-    global game_state
+    def draw_menu_screen(self):
+        """Draw the main menu screen"""
+        self.screen.fill(WHITE)
 
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        pos = pygame.mouse.get_pos()
-        if back_button.rect.collidepoint(pos):
-            game_state = MENU
-            play_sound(click_sound)
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
 
+        # Welcome message
+        welcome_text = font_large.render(f"Welcome, {self.current_user}!", True, WHITE)
+        welcome_rect = welcome_text.get_rect(center=(SCREEN_WIDTH // 2, 100))
+        self.screen.blit(welcome_text, welcome_rect)
 
-def handle_game_events(event, back_button):
-    """Handle events for the game screen"""
-    global current_player, game_state, winner
+        # Game title
+        title = font_xl.render("Tic Tac Toe", True, WHITE)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 180))
+        self.screen.blit(title, title_rect)
 
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        pos = pygame.mouse.get_pos()
+        # Buttons
+        local_button = Button(SCREEN_WIDTH // 2 - 150, 300, 300, 60, "Local Game", BLUE, DARK_BLUE)
+        online_button = Button(SCREEN_WIDTH // 2 - 150, 380, 300, 60, "Online Game", GREEN, (0, 200, 0))
+        about_button = Button(SCREEN_WIDTH // 2 - 150, 460, 300, 60, "About", PURPLE, (100, 0, 100))
+        logout_button = Button(SCREEN_WIDTH // 2 - 150, 540, 300, 40, "Logout", RED, (200, 0, 0), font=font_small)
 
-        # Check if back button was clicked
-        if back_button.rect.collidepoint(pos):
-            game_state = MENU
-            play_sound(click_sound)
-            return
+        local_button.draw(self.screen)
+        online_button.draw(self.screen)
+        about_button.draw(self.screen)
+        logout_button.draw(self.screen)
 
-        # Check if a board cell was clicked
+        return local_button, online_button, about_button, logout_button
+
+    def draw_about_screen(self):
+        """Draw the about screen"""
+        self.screen.fill(WHITE)
+
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        # About box
+        about_box = pygame.Rect(100, 100, SCREEN_WIDTH - 200, SCREEN_HEIGHT - 200)
+        pygame.draw.rect(self.screen, WHITE, about_box, border_radius=15)
+        pygame.draw.rect(self.screen, BLACK, about_box, 2, border_radius=15)
+
+        # Title
+        title = font_large.render("About Tic Tac Toe", True, BLACK)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 150))
+        self.screen.blit(title, title_rect)
+
+        # Content
+        lines = [
+            "Tic Tac Toe Game",
+            "Version 1.0",
+            "",
+            "Created with Pygame",
+            "",
+            "This game features:",
+            "- Local multiplayer",
+            "- Online multiplayer",
+            "- Beautiful UI",
+            "- Sound effects",
+            "Add teammates, professor, and subject",
+            "Developed as a learning project"
+        ]
+
+        for i, line in enumerate(lines):
+            text = font_small.render(line, True, BLACK)
+            self.screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 220 + i * 30))
+
+        # Back button
+        back_button = Button(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 120, 200, 50, "Back", BLUE, DARK_BLUE)
+        back_button.draw(self.screen)
+
+        return back_button
+
+    def draw_game_screen(self):
+        """Draw the game screen"""
+        self.screen.fill(WHITE)
+
+        # Draw game board
         board_size = 400
         board_x = (SCREEN_WIDTH - board_size) // 2
         board_y = (SCREEN_HEIGHT - board_size) // 2
+
+        # Draw board background
+        pygame.draw.rect(self.screen, LIGHT_GRAY, (board_x, board_y, board_size, board_size))
+
+        # Draw grid lines
         cell_size = board_size // BOARD_SIZE
+        for i in range(1, BOARD_SIZE):
+            # Vertical lines
+            pygame.draw.line(self.screen, BLACK, (board_x + i * cell_size, board_y),
+                             (board_x + i * cell_size, board_y + board_size), 3)
+            # Horizontal lines
+            pygame.draw.line(self.screen, BLACK, (board_x, board_y + i * cell_size),
+                             (board_x + board_size, board_y + i * cell_size), 3)
 
-        if board_x <= pos[0] <= board_x + board_size and board_y <= pos[1] <= board_y + board_size:
-            col = (pos[0] - board_x) // cell_size
-            row = (pos[1] - board_y) // cell_size
-
-            if board[row][col] == '' and winner is None:
-                board[row][col] = current_player
-                play_sound(click_sound)
-
-                # Check for winner
-                winner = check_winner()
-                if winner:
-                    if winner != 'draw':
-                        play_sound(win_sound)
+        # Draw X's and O's
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                if self.board[row][col] == 'X':
+                    x_pos = board_x + col * cell_size + cell_size // 2
+                    y_pos = board_y + row * cell_size + cell_size // 2
+                    if self.x_image:
+                        x_rect = self.x_image.get_rect(center=(x_pos, y_pos))
+                        self.screen.blit(self.x_image, x_rect)
                     else:
-                        play_sound(draw_sound)
-                    game_state = END
+                        pygame.draw.line(self.screen, RED, (x_pos - 30, y_pos - 30), (x_pos + 30, y_pos + 30), 5)
+                        pygame.draw.line(self.screen, RED, (x_pos + 30, y_pos - 30), (x_pos - 30, y_pos + 30), 5)
+                elif self.board[row][col] == 'O':
+                    x_pos = board_x + col * cell_size + cell_size // 2
+                    y_pos = board_y + row * cell_size + cell_size // 2
+                    if self.o_image:
+                        o_rect = self.o_image.get_rect(center=(x_pos, y_pos))
+                        self.screen.blit(self.o_image, o_rect)
+                    else:
+                        pygame.draw.circle(self.screen, BLUE, (x_pos, y_pos), 30, 5)
+
+        # Draw current player indicator
+        player_text = font_medium.render(f"Current Player: {self.current_player}", True, BLACK)
+        self.screen.blit(player_text, (20, 20))
+
+        # Draw back button
+        back_button = Button(20, SCREEN_HEIGHT - 70, 150, 50, "Menu", RED, (200, 0, 0))
+        back_button.draw(self.screen)
+
+        return back_button
+
+    def draw_end_screen(self):
+        """Draw the end game screen"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        # Result box
+        result_box = pygame.Rect(SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2 - 150, 400, 300)
+        pygame.draw.rect(self.screen, WHITE, result_box, border_radius=15)
+        pygame.draw.rect(self.screen, BLACK, result_box, 2, border_radius=15)
+
+        # Result text
+        if self.winner == 'draw':
+            result_text = font_large.render("It's a Draw!", True, BLACK)
+        else:
+            result_text = font_large.render(f"Player {self.winner} Wins!", True, BLACK)
+
+        result_rect = result_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
+        self.screen.blit(result_text, result_rect)
+
+        # Buttons
+        menu_button = Button(SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT // 2 + 50, 150, 50, "Main Menu", BLUE, DARK_BLUE)
+        replay_button = Button(SCREEN_WIDTH // 2 + 30, SCREEN_HEIGHT // 2 + 50, 150, 50, "Play Again", GREEN,
+                               (0, 200, 0))
+
+        menu_button.draw(self.screen)
+        replay_button.draw(self.screen)
+
+        return menu_button, replay_button
+
+    def handle_login_events(self, event, login_button, about_button, mouse_pos):
+        """Handle events for the login screen"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_TAB:
+                self.active_input = "password" if self.active_input == "username" else "username"
+            elif event.key == pygame.K_BACKSPACE:
+                if self.active_input == "username":
+                    self.username = self.username[:-1]
                 else:
-                    # Switch player
-                    current_player = 'O' if current_player == 'X' else 'X'
+                    self.password = self.password[:-1]
+            else:
+                if event.unicode.isprintable():
+                    if self.active_input == "username" and len(self.username) < 20:
+                        self.username += event.unicode
+                    elif self.active_input == "password" and len(self.password) < 20:
+                        self.password += event.unicode
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            x, y = event.pos
+            # Text field selection
+            username_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 290, 260, 40)
+            password_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 370, 260, 40)
+
+            if username_rect.collidepoint(x, y):
+                self.active_input = "username"
+            elif password_rect.collidepoint(x, y):
+                self.active_input = "password"
+            elif login_button.is_clicked(mouse_pos, event):
+                success, msg = self.client.connect(self.username, self.password)
+                if success:
+                    self.current_user = self.username
+                    self.game_state = MENU
+                    self.message = "Login successful"
+                else:
+                    self.message = msg
+            elif about_button.is_clicked(mouse_pos, event):
+                self.game_state = ABOUT
+
+    def handle_menu_events(self, event, buttons, mouse_pos):
+        """Handle events for the menu screen"""
+        local_button, online_button, about_button, logout_button = buttons
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if local_button.rect.collidepoint(mouse_pos):
+                self.game_mode = 'local'
+                self.reset_game()
+                self.game_state = GAME
+                self.play_sound(self.click_sound)
+            elif online_button.rect.collidepoint(mouse_pos):
+                self.game_mode = 'online'
+                self.reset_game()
+                self.game_state = GAME
+                self.play_sound(self.click_sound)
+            elif about_button.rect.collidepoint(mouse_pos):
+                self.game_state = ABOUT
+                self.play_sound(self.click_sound)
+            elif logout_button.rect.collidepoint(mouse_pos):
+                self.game_state = LOGIN
+                self.play_sound(self.click_sound)
+
+    def handle_about_events(self, event, back_button, mouse_pos):
+        """Handle events for the about screen"""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if back_button.rect.collidepoint(mouse_pos):
+                self.game_state = MENU
+                self.play_sound(self.click_sound)
+
+    def handle_game_events(self, event, back_button, mouse_pos):
+        """Handle events for the game screen"""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Check if back button was clicked
+            if back_button.rect.collidepoint(mouse_pos):
+                self.game_state = MENU
+                self.play_sound(self.click_sound)
+                return
+
+            # Check if a board cell was clicked
+            board_size = 400
+            board_x = (SCREEN_WIDTH - board_size) // 2
+            board_y = (SCREEN_HEIGHT - board_size) // 2
+            cell_size = board_size // BOARD_SIZE
+
+            if (board_x <= mouse_pos[0] <= board_x + board_size and
+                    board_y <= mouse_pos[1] <= board_y + board_size):
+                col = (mouse_pos[0] - board_x) // cell_size
+                row = (mouse_pos[1] - board_y) // cell_size
+
+                if (self.board[row][col] == '' and self.winner is None and
+                        (self.game_mode == 'local' or
+                         (self.game_mode == 'online' and self.client.current_turn == self.client.player_symbol))):
+
+                    if self.game_mode == 'local':
+                        self.board[row][col] = self.current_player
+                        self.play_sound(self.click_sound)
+
+                        self.winner = self.check_winner()
+                        if self.winner:
+                            if self.winner != 'draw':
+                                self.play_sound(self.win_sound)
+                            else:
+                                self.play_sound(self.draw_sound)
+                            self.game_state = END
+                        else:
+                            self.current_player = 'O' if self.current_player == 'X' else 'X'
+                    elif self.game_mode == 'online':
+                        if self.client.send_move(row, col):
+                            self.board[row][col] = self.client.player_symbol
+                            self.play_sound(self.click_sound)
+
+    def handle_end_events(self, event, buttons, mouse_pos):
+        """Handle events for the end screen"""
+        menu_button, replay_button = buttons
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if menu_button.rect.collidepoint(mouse_pos):
+                self.game_state = MENU
+                self.play_sound(self.click_sound)
+            elif replay_button.rect.collidepoint(mouse_pos):
+                self.reset_game()
+                if self.game_mode == 'online':
+                    # For online games, wait for server to start new game
+                    pass
+                else:
+                    self.game_state = GAME
+                self.play_sound(self.click_sound)
+
+    def run(self):
+        clock = pygame.time.Clock()
+        running = True
+
+        while running:
+            clock.tick(60)
+            mouse_pos = pygame.mouse.get_pos()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                if self.game_state == LOGIN:
+                    login_button, about_button = self.draw_login_screen()
+                    self.handle_login_events(event, login_button, about_button, mouse_pos)
+                elif self.game_state == MENU:
+                    buttons = self.draw_menu_screen()
+                    for button in buttons:
+                        button.check_hover(mouse_pos)
+                    self.handle_menu_events(event, buttons, mouse_pos)
+                elif self.game_state == ABOUT:
+                    back_button = self.draw_about_screen()
+                    back_button.check_hover(mouse_pos)
+                    self.handle_about_events(event, back_button, mouse_pos)
+                elif self.game_state == GAME:
+                    back_button = self.draw_game_screen()
+                    back_button.check_hover(mouse_pos)
+                    self.handle_game_events(event, back_button, mouse_pos)
+                elif self.game_state == END:
+                    buttons = self.draw_end_screen()
+                    for button in buttons:
+                        button.check_hover(mouse_pos)
+                    self.handle_end_events(event, buttons, mouse_pos)
+
+            # Draw the appropriate screen
+            if self.game_state == LOGIN:
+                login_button, about_button = self.draw_login_screen()
+                login_button.check_hover(mouse_pos)
+                about_button.check_hover(mouse_pos)
+
+                # Show username text
+                username_text = font_small.render(self.username, True, BLACK)
+                self.screen.blit(username_text, (SCREEN_WIDTH // 2 - 120, 300))
+            elif self.game_state == MENU:
+                buttons = self.draw_menu_screen()
+                for button in buttons:
+                    button.check_hover(mouse_pos)
+            elif self.game_state == ABOUT:
+                back_button = self.draw_about_screen()
+                back_button.check_hover(mouse_pos)
+            elif self.game_state == GAME:
+                back_button = self.draw_game_screen()
+                back_button.check_hover(mouse_pos)
+            elif self.game_state == END:
+                buttons = self.draw_end_screen()
+                for button in buttons:
+                    button.check_hover(mouse_pos)
+
+            pygame.display.flip()
+
+        self.client.close()
+        pygame.quit()
+        sys.exit()
 
 
-def handle_end_events(event, buttons):
-    """Handle events for the end screen"""
-    global game_state
-
-    menu_button, replay_button = buttons
-
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        pos = pygame.mouse.get_pos()
-        if menu_button.rect.collidepoint(pos):
-            game_state = MENU
-            play_sound(click_sound)
-        elif replay_button.rect.collidepoint(pos):
-            reset_game()
-            game_state = GAME
-            play_sound(click_sound)
-
-
-def play_sound(sound):
-    """Play a sound effect if available"""
-    try:
-        sound.play()
-    except:
-        pass
-
-
-# actualizados
-# Main game loop
-clock = pygame.time.Clock() # Add this at initialization
-running = True
-while running:
-    # Keep the game running at 60 FPS
-    clock.tick(60)
-    mouse_pos = pygame.mouse.get_pos()
-
-    #EVENTOS PARA LOS BOTONES
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
-        # Handle events based on current game state
-        if game_state == LOGIN:
-            login_button, about_button = draw_login_screen()
-            handle_login_events(event)  
-
-            # Luego manejar clics en botones
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if login_button.rect.collidepoint(mouse_pos):
-                    #Autenticacion con el server ya hecho 
-                    auth_success, auth_message, _ = send_credentials(username, password)
-                    if auth_success:
-                        current_user = username
-                        game_state = MENU
-                        message = "Login successful"
-                        play_sound(click_sound)
-                    else:
-                        message = auth_message
-                elif about_button.rect.collidepoint(mouse_pos):
-                    game_state = ABOUT
-                    play_sound(click_sound)
-
-        elif game_state == MENU:
-            buttons = draw_menu_screen()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                handle_menu_events(event, buttons)
-
-        elif game_state == ABOUT:
-            back_button = draw_about_screen()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                handle_about_events(event, back_button)
-
-        elif game_state == GAME:
-            back_button = draw_game_screen()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                handle_game_events(event, back_button)
-
-        elif game_state == END:
-            buttons = draw_end_screen()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                handle_end_events(event, buttons)
-
-    if game_state == LOGIN:
-        login_button, about_button = draw_login_screen()
-        login_button.check_hover(mouse_pos)
-        about_button.check_hover(mouse_pos)
-        
-        # Mostrar texto de usuario actual
-        username_text = font_small.render(username, True, BLACK)
-        screen.blit(username_text, (SCREEN_WIDTH // 2 - 120, 300))
-    elif game_state == MENU:
-        buttons = draw_menu_screen()
-        for button in buttons:
-            button.check_hover(mouse_pos)
-    elif game_state == ABOUT:
-        back_button = draw_about_screen()
-        back_button.check_hover(mouse_pos)
-    elif game_state == GAME:
-        back_button = draw_game_screen()
-        back_button.check_hover(mouse_pos)
-    elif game_state == END:
-        buttons = draw_end_screen()
-        for button in buttons:
-            button.check_hover(mouse_pos)
-
-    pygame.display.flip()
-pygame.quit()
-sys.exit()
+if __name__ == "__main__":
+    game = TicTacToeGUI()
+    game.run()
