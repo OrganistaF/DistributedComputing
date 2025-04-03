@@ -74,13 +74,11 @@ class TicTacToeClient:
                     if self.gui_callback:
                         self.gui_callback('start', None, None, None)
 
+
                 elif message.startswith("MOVE"):
                     parts = message.split()
                     row, col, symbol = int(parts[1]), int(parts[2]), parts[3]
-                    # Always flip the turn: new turn is the opposite of the move's symbol.
-                    self.current_turn = 'O' if symbol == 'X' else 'X'
-                    print(
-                        f"[UDP Listener] Move received: row={row}, col={col}, symbol={symbol}. Updated current_turn: {self.current_turn}")
+                    self.current_turn = 'O' if symbol == 'X' else 'X'  # Correctly switch turns
                     if self.gui_callback:
                         self.gui_callback('move', row, col, symbol)
 
