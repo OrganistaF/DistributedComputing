@@ -67,8 +67,7 @@ class TicTacToeClient:
 
                 if message == "START":
                     self.game_active = True
-                    # Do not change self.player_symbol; use the symbol assigned by the server.
-                    self.current_turn = 'X'  # The game starts with 'X'
+                    self.current_turn = 'X'  # Game always starts with X
                     print(f"Game started! You are player {self.player_symbol}")
                     if self.gui_callback:
                         self.gui_callback('start', None, None, None)
@@ -76,9 +75,8 @@ class TicTacToeClient:
                 elif message.startswith("MOVE"):
                     parts = message.split()
                     row, col, symbol = int(parts[1]), int(parts[2]), parts[3]
-                    # Only update current_turn if the move comes from the opponent.
-                    if symbol != self.player_symbol:
-                        self.current_turn = self.player_symbol
+                    # Always flip the turn: new turn is the opposite of the move's symbol.
+                    self.current_turn = 'O' if symbol == 'X' else 'X'
                     if self.gui_callback:
                         self.gui_callback('move', row, col, symbol)
 

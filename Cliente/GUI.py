@@ -284,24 +284,27 @@ class TicTacToeGUI:
         # Content
         lines = [
             "Tic Tac Toe Game",
-            "Version 1.0",
-            "",
             "Created with Pygame",
+            "Get 3 in a row to win!",
             "",
-            "This game features:",
-            "- Local multiplayer",
-            "- Online multiplayer",
-            "Ana Maria Guzman Solís"
-            "Jorge Alberto Fong Alvarez"
-            "Luis Felipe Organista Mendez"
-            "Professor Dr. Juan Carlos Lopez Pimentel"
+            "Ana Maria Guzman Solís",
+            "Jorge Alberto Fong Alvarez",
+            "Luis Felipe Organista Mendez",
+            "Professor Dr. Juan Carlos Lopez Pimentel",
             "Distributed Computing",
-            "Developed as a learning project"
         ]
+
+        # Calculate if we need to adjust spacing for too much content
+        total_height = len(lines) * 30
+        available_height = SCREEN_HEIGHT - 350  # Approximate space between title and back button
+
+        line_spacing = 30  # Default spacing
+        if total_height > available_height:
+            line_spacing = max(20, available_height // len(lines))  # Reduce spacing if needed, but not below 20
 
         for i, line in enumerate(lines):
             text = font_small.render(line, True, BLACK)
-            self.screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 220 + i * 30))
+            self.screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 220 + i * line_spacing))
 
         # Back button
         back_button = Button(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 120, 200, 50, "Back", BLUE, DARK_BLUE)
@@ -393,7 +396,7 @@ class TicTacToeGUI:
 
         return menu_button, replay_button
 
-    def handle_login_events(self, event, login_button, about_button, mouse_pos):
+    def handle_login_events(self, event, login_button, mouse_pos):
         """Handle events for the login screen"""
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_TAB:
@@ -428,8 +431,6 @@ class TicTacToeGUI:
                     self.message = "Login successful"
                 else:
                     self.message = msg
-            elif about_button.is_clicked(mouse_pos, event):
-                self.game_state = ABOUT
 
     def handle_menu_events(self, event, buttons, mouse_pos):
         """Handle events for the menu screen"""
@@ -461,46 +462,45 @@ class TicTacToeGUI:
                 self.play_sound(self.click_sound)
 
     def handle_game_events(self, event, back_button, mouse_pos):
-        """Handle events for the game screen"""
+        """Handle events for the game screen with turn validation."""
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # Check if back button was clicked
             if back_button.rect.collidepoint(mouse_pos):
                 self.game_state = MENU
                 self.play_sound(self.click_sound)
                 return
 
-            # Check if a board cell was clicked
             board_size = 400
             board_x = (SCREEN_WIDTH - board_size) // 2
             board_y = (SCREEN_HEIGHT - board_size) // 2
             cell_size = board_size // BOARD_SIZE
 
-            if (board_x <= mouse_pos[0] <= board_x + board_size and
-                    board_y <= mouse_pos[1] <= board_y + board_size):
+            if board_x <= mouse_pos[0] <= board_x + board_size and board_y <= mouse_pos[1] <= board_y + board_size:
                 col = (mouse_pos[0] - board_x) // cell_size
                 row = (mouse_pos[1] - board_y) // cell_size
 
-                if (self.board[row][col] == '' and self.winner is None and
-                        (self.game_mode == 'local' or
-                         (self.game_mode == 'online' and self.client.current_turn == self.client.player_symbol))):
-
-                    if self.game_mode == 'local':
+                if self.board[row][col] == '' and self.winner is None:
+                    if self.game_mode == 'online':
+                        # Check if it's really this player's turn.
+                        if self.client.current_turn != self.client.player_symbol:
+                            print("Not your turn!")
+                            return
+                        if self.client.send_move(row, col):
+                            self.board[row][col] = self.client.player_symbol
+                            self.play_sound(self.click_sound)
+                        else:
+                            print("Failed to send move.")
+                    elif self.game_mode == 'local':
                         self.board[row][col] = self.current_player
                         self.play_sound(self.click_sound)
-
                         self.winner = self.check_winner()
                         if self.winner:
                             if self.winner != 'draw':
                                 self.play_sound(self.win_sound)
                             else:
-                                self.play_sound(self.draw_sound)
+                                self.play_sound(self.lose_sound)
                             self.game_state = END
                         else:
                             self.current_player = 'O' if self.current_player == 'X' else 'X'
-                    elif self.game_mode == 'online':
-                        if self.client.send_move(row, col):
-                            self.board[row][col] = self.client.player_symbol
-                            self.play_sound(self.click_sound)
 
     def handle_end_events(self, event, buttons, mouse_pos):
         """Handle events for the end screen"""
@@ -532,8 +532,8 @@ class TicTacToeGUI:
                     running = False
 
                 if self.game_state == LOGIN:
-                    login_button, about_button = self.draw_login_screen()
-                    self.handle_login_events(event, login_button, about_button, mouse_pos)
+                    login_button = self.draw_login_screen()
+                    self.handle_login_events(event, login_button, mouse_pos)
                 elif self.game_state == MENU:
                     buttons = self.draw_menu_screen()
                     for button in buttons:
@@ -555,9 +555,8 @@ class TicTacToeGUI:
 
             # Draw the appropriate screen
             if self.game_state == LOGIN:
-                login_button, about_button = self.draw_login_screen()
+                login_button = self.draw_login_screen()
                 login_button.check_hover(mouse_pos)
-                about_button.check_hover(mouse_pos)
 
                 # Show username text
                 username_text = font_small.render(self.username, True, BLACK)
