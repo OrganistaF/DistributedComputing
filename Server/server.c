@@ -108,18 +108,19 @@ void *handle_client(void *arg) {
 
         pthread_mutex_lock(&game_state.lock);
         game_state.player_udp[player_num] = udp_addr;
-        // Create a UDP socket for sending messages for this player.
         game_state.player_sockets[player_num] = socket(AF_INET, SOCK_DGRAM, 0);
-        // If both players are connected, send the START message.
+        printf("[Server] Player %d UDP ready on port %d\n", player_num, udp_port);
         if (game_state.active == MAX_PLAYERS) {
-            printf("Both players connected, sending START message.\n");
+            printf("[Server] Both players connected, sending START message.\n");
             for (int i = 0; i < MAX_PLAYERS; i++) {
                 char start_msg[] = "START\n";
+                printf("[Server] Sending START to player %d at %s:%d\n", i,
+                       inet_ntoa(game_state.player_udp[i].sin_addr),
+                       ntohs(game_state.player_udp[i].sin_port));
                 sendto(game_state.player_sockets[i], start_msg, strlen(start_msg), 0,
                        (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
             }
-            // Optionally, reinitialize game state for a new round.
-            init_game();
+            // Do NOT reinitialize game state here, so that turn information remains valid.
         }
         pthread_mutex_unlock(&game_state.lock);
     } else {

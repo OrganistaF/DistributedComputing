@@ -37,6 +37,7 @@ class TicTacToeClient:
                         print(f"Assigned symbol: {self.player_symbol}")
                     self.udp_socket.bind(('0.0.0.0', 0))
                     local_udp_port = self.udp_socket.getsockname()[1]
+                    print(f"[Client] UDP socket bound to port {local_udp_port}")
                     self.tcp_socket.sendall(f"UDP_READY {local_udp_port}\n".encode())
                     threading.Thread(target=self.udp_listener, daemon=True).start()
                     return True, "Authentication successful"
@@ -63,12 +64,13 @@ class TicTacToeClient:
             try:
                 data, addr = self.udp_socket.recvfrom(1024)
                 message = data.decode().strip()
-                print(f"Received UDP message: {message}")
+                print(f"[UDP Listener] Received UDP message: '{message}' from {addr}")
 
                 if message == "START":
                     self.game_active = True
                     self.current_turn = 'X'  # Game always starts with X
-                    print(f"Game started! You are player {self.player_symbol}")
+                    print(
+                        f"[UDP Listener] Game started! You are player {self.player_symbol}. Current turn set to: {self.current_turn}")
                     if self.gui_callback:
                         self.gui_callback('start', None, None, None)
 
@@ -77,6 +79,8 @@ class TicTacToeClient:
                     row, col, symbol = int(parts[1]), int(parts[2]), parts[3]
                     # Always flip the turn: new turn is the opposite of the move's symbol.
                     self.current_turn = 'O' if symbol == 'X' else 'X'
+                    print(
+                        f"[UDP Listener] Move received: row={row}, col={col}, symbol={symbol}. Updated current_turn: {self.current_turn}")
                     if self.gui_callback:
                         self.gui_callback('move', row, col, symbol)
 
@@ -85,11 +89,12 @@ class TicTacToeClient:
                     result = parts[1]
                     row, col, symbol = int(parts[2]), int(parts[3]), parts[4]
                     self.game_active = False
+                    print(f"[UDP Listener] Game over received: result={result}")
                     if self.gui_callback:
                         self.gui_callback('game_over', result, row, col, symbol)
 
             except Exception as e:
-                print(f"UDP error: {str(e)}")
+                print(f"[UDP Listener] UDP error: {str(e)}")
                 break
 
     def send_move(self, row, col):

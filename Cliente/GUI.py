@@ -480,15 +480,16 @@ class TicTacToeGUI:
 
                 if self.board[row][col] == '' and self.winner is None:
                     if self.game_mode == 'online':
-                        # Check if it's really this player's turn.
+                        print(
+                            f"[GUI] Player symbol: {self.client.player_symbol}, Current turn: {self.client.current_turn}")
                         if self.client.current_turn != self.client.player_symbol:
-                            print("Not your turn!")
+                            print("[GUI] Not your turn!")
                             return
                         if self.client.send_move(row, col):
                             self.board[row][col] = self.client.player_symbol
                             self.play_sound(self.click_sound)
                         else:
-                            print("Failed to send move.")
+                            print("[GUI] Failed to send move.")
                     elif self.game_mode == 'local':
                         self.board[row][col] = self.current_player
                         self.play_sound(self.click_sound)
