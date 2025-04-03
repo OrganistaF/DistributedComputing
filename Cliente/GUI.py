@@ -221,10 +221,6 @@ class TicTacToeGUI:
         login_button = Button(SCREEN_WIDTH // 2 - 100, 430, 200, 40, "Login", BLUE, DARK_BLUE)
         login_button.draw(self.screen)
 
-        # Button "About"
-        about_button = Button(SCREEN_WIDTH // 2 - 100, 480, 200, 40, "About", GRAY, LIGHT_GRAY, BLACK, font_small)
-        about_button.draw(self.screen)
-
         # Message after login
         if self.message:
             color = GREEN if self.message == "Login successful" else RED
@@ -232,7 +228,7 @@ class TicTacToeGUI:
             msg_rect = msg_text.get_rect(center=(SCREEN_WIDTH // 2, 530))
             self.screen.blit(msg_text, msg_rect)
 
-        return login_button, about_button
+        return login_button
 
     def draw_menu_screen(self):
         """Draw the main menu screen"""
@@ -295,9 +291,11 @@ class TicTacToeGUI:
             "This game features:",
             "- Local multiplayer",
             "- Online multiplayer",
-            "- Beautiful UI",
-            "- Sound effects",
-            "Add teammates, professor, and subject",
+            "Ana Maria Guzman Solís"
+            "Jorge Alberto Fong Alvarez"
+            "Luis Felipe Organista Mendez"
+            "Professor Dr. Juan Carlos Lopez Pimentel"
+            "Distributed Computing",
             "Developed as a learning project"
         ]
 

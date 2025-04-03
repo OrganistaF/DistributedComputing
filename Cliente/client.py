@@ -3,7 +3,7 @@ import threading
 
 
 class TicTacToeClient:
-    def __init__(self, host="172.19.0.2", tcp_port=5000, udp_port=5001):
+    def __init__(self, host="127.0.0.1", tcp_port=5000, udp_port=5001):
         self.host = host
         self.tcp_port = tcp_port
         self.udp_port = udp_port
@@ -18,28 +18,32 @@ class TicTacToeClient:
     def connect(self, username, password):
         self.username = username
         try:
+            print(f"Attempting to connect to {self.host}:{self.tcp_port}")
             self.tcp_socket.connect((self.host, self.tcp_port))
-            # Send credentials terminated by newline
             self.tcp_socket.sendall(f"{username} {password}\n".encode())
+            print("Credentials sent, waiting for server response...")
 
-            # Read response line (e.g., "OK")
             response = self._readline(self.tcp_socket)
+            print(f"Received: {response}")
             if response.strip() == "OK":
-                print("Authenticated. Getting UDP info...")
-
                 udp_info = self._readline(self.tcp_socket)
+                print(f"Received UDP info: {udp_info}")
                 if udp_info.startswith("UDP_PORT"):
                     self.udp_port = int(udp_info.split()[1])
-
-                    # Bind UDP socket and send UDP_READY with newline
+                    # Read the symbol assignment
+                    symbol_line = self._readline(self.tcp_socket)
+                    if symbol_line.startswith("SYMBOL"):
+                        self.player_symbol = symbol_line.split()[1].strip()
+                        print(f"Assigned symbol: {self.player_symbol}")
                     self.udp_socket.bind(('0.0.0.0', 0))
                     local_udp_port = self.udp_socket.getsockname()[1]
                     self.tcp_socket.sendall(f"UDP_READY {local_udp_port}\n".encode())
-
                     threading.Thread(target=self.udp_listener, daemon=True).start()
                     return True, "Authentication successful"
+            print("Authentication failed or invalid response.")
             return False, "Authentication failed"
         except Exception as e:
+            print(f"Exception during connect: {str(e)}")
             return False, f"Error: {str(e)}"
 
     def _readline(self, sock):
@@ -63,12 +67,8 @@ class TicTacToeClient:
 
                 if message == "START":
                     self.game_active = True
-                    # Assume the server is the source of truth.
-                    # Optionally, let the server send the assigned symbol.
-                    if self.player_symbol is None:
-                        # Fallback: decide based on local UDP port parity
-                        self.player_symbol = 'X' if self.udp_socket.getsockname()[1] % 2 == 0 else 'O'
-                    self.current_turn = 'X'
+                    # Do not change self.player_symbol; use the symbol assigned by the server.
+                    self.current_turn = 'X'  # The game starts with 'X'
                     print(f"Game started! You are player {self.player_symbol}")
                     if self.gui_callback:
                         self.gui_callback('start', None, None, None)

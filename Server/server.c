@@ -142,27 +142,32 @@ void handle_client(int client_socket, int player_num) {
     char buffer[1024] = {0};
     char username[50], password[50];
 
-    // Read credentials (assumes client sends a newline-terminated string)
-    read(client_socket, buffer, 1024);
+    int bytes = read(client_socket, buffer, 1024);
+    printf("Received from client: %s\n", buffer);
     sscanf(buffer, "%s %s", username, password);
 
     if (authenticate_user(username, password)) {
-        // Send OK with newline delimiter
-        write(client_socket, "OK\n", 3);
         printf("Player %d authenticated: %s\n", player_num, username);
-
-        // Send UDP port info with newline
+        write(client_socket, "OK\n", 3);
         char udp_info[50];
         snprintf(udp_info, sizeof(udp_info), "UDP_PORT %d\n", UDP_PORT);
         write(client_socket, udp_info, strlen(udp_info));
 
-        // Read the UDP_READY message (newline terminated)
+        // Send the assigned symbol to the client
+        char symbol_msg[20];
+        if (player_num == 0) {
+            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL X\n");
+        } else {
+            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL O\n");
+        }
+        write(client_socket, symbol_msg, strlen(symbol_msg));
+
         memset(buffer, 0, sizeof(buffer));
         read(client_socket, buffer, 1024);
+        printf("Received UDP_READY: %s\n", buffer);
         int udp_port;
         sscanf(buffer, "UDP_READY %d", &udp_port);
 
-        // Set up the UDP address for the player
         struct sockaddr_in udp_addr;
         socklen_t addr_len = sizeof(udp_addr);
         getpeername(client_socket, (struct sockaddr*)&udp_addr, &addr_len);
@@ -186,7 +191,6 @@ void handle_client(int client_socket, int player_num) {
     } else {
         write(client_socket, "ERROR\n", 6);
     }
-
     close(client_socket);
     exit(0);
 }
