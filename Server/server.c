@@ -29,7 +29,6 @@ typedef enum {
 typedef struct {
     char board[BOARD_SIZE][BOARD_SIZE];
     char current_player;
-    int player_sockets[MAX_PLAYERS];
     struct sockaddr_in player_udp[MAX_PLAYERS];
     int active;
     pthread_mutex_t lock;
@@ -56,31 +55,87 @@ void init_game() {
     }
     game_state.current_player = 'X';
     game_state.active = 0;
-    for (int i = 0; i < MAX_PLAYERS; i++) {
-        game_state.player_sockets[i] = -1;
-    }
     pthread_mutex_init(&game_state.lock, NULL);
+}
+
+void broadcast_message(int udp_fd, const char *message) {
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (game_state.player_udp[i].sin_port != 0) {
+            sendto(udp_fd, message, strlen(message), 0,
+                   (struct sockaddr*)&game_state.player_udp[i],
+                   sizeof(game_state.player_udp[i]));
+        }
+    }
+}
+
+void check_winner(int udp_fd) {
+    // Check rows, columns, and diagonals for a winner
+    char winner = ' ';
+    // ... (Implement win checking logic here)
+
+    GameResult result = GAME_ACTIVE;
+    if (winner != ' ') {
+        result = (winner == 'X') ? GAME_WIN_X : GAME_WIN_O;
+    } else if (/* Check for draw */) {
+        result = GAME_DRAW;
+    }
+
+    if (result != GAME_ACTIVE) {
+        char msg[50];
+        snprintf(msg, sizeof(msg), "GAME_OVER %d %d %c\n", row, col, winner);
+        broadcast_message(udp_fd, msg);
+        init_game(); // Reset for new game
+    }
+}
+
+void *udp_listener(void *arg) {
+    int udp_fd = *(int *)arg;
+    char buffer[1024];
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    while (1) {
+        ssize_t bytes = recvfrom(udp_fd, buffer, sizeof(buffer)-1, 0,
+                                (struct sockaddr*)&client_addr, &addr_len);
+        if (bytes > 0) {
+            buffer[bytes] = '\0';
+            pthread_mutex_lock(&game_state.lock);
+            // Example: Handle MOVE command from client
+            if (strncmp(buffer, "MOVE", 4) == 0) {
+                int row, col;
+                char symbol;
+                sscanf(buffer, "MOVE %d %d %c", &row, &col, &symbol);
+                if (row >= 0 && row < BOARD_SIZE && col >=0 && col < BOARD_SIZE &&
+                    game_state.board[row][col] == ' ' &&
+                    game_state.current_player == symbol) {
+                    game_state.board[row][col] = symbol;
+                    game_state.current_player = (symbol == 'X') ? 'O' : 'X';
+                    // Broadcast the move to all players
+                    char msg[50];
+                    snprintf(msg, sizeof(msg), "MOVE %d %d %c\n", row, col, symbol);
+                    broadcast_message(udp_fd, msg);
+                    check_winner(udp_fd);
+                }
+            }
+            pthread_mutex_unlock(&game_state.lock);
+        }
+    }
+    return NULL;
 }
 
 void *handle_client(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
-
-    char buffer[1024] = {0};
+    char buffer[1024];
     char username[50], password[50];
 
-    int bytes = read(client_socket, buffer, sizeof(buffer));
-    printf("Received from client: %s\n", buffer);
+    read(client_socket, buffer, sizeof(buffer));
     sscanf(buffer, "%s %s", username, password);
 
     if (authenticate_user(username, password)) {
-        printf("Player authenticated: %s\n", username);
         write(client_socket, "OK\n", 3);
-        char udp_info[50];
-        snprintf(udp_info, sizeof(udp_info), "UDP_PORT %d\n", UDP_PORT);
-        write(client_socket, udp_info, strlen(udp_info));
+        write(client_socket, "UDP_PORT 5001\n", 14);
 
-        // Assign symbol based on connection order.
         int player_num;
         pthread_mutex_lock(&game_state.lock);
         player_num = game_state.active;
@@ -88,41 +143,26 @@ void *handle_client(void *arg) {
         pthread_mutex_unlock(&game_state.lock);
 
         char symbol_msg[20];
-        if (player_num == 0) {
-            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL X\n");
-        } else {
-            snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL O\n");
-        }
+        snprintf(symbol_msg, sizeof(symbol_msg), "SYMBOL %c\n", (player_num == 0) ? 'X' : 'O');
         write(client_socket, symbol_msg, strlen(symbol_msg));
 
-        memset(buffer, 0, sizeof(buffer));
+        // Read client's UDP port
         read(client_socket, buffer, sizeof(buffer));
-        printf("Received UDP_READY: %s\n", buffer);
         int udp_port;
         sscanf(buffer, "UDP_READY %d", &udp_port);
 
-        struct sockaddr_in udp_addr;
-        socklen_t addr_len = sizeof(udp_addr);
-        getpeername(client_socket, (struct sockaddr*)&udp_addr, &addr_len);
-        udp_addr.sin_port = htons(udp_port);
+        // Get client's IP from TCP connection
+        struct sockaddr_in tcp_addr;
+        socklen_t tcp_len = sizeof(tcp_addr);
+        getpeername(client_socket, (struct sockaddr*)&tcp_addr, &tcp_len);
+        // Set UDP address for the client
+        game_state.player_udp[player_num] = tcp_addr;
+        game_state.player_udp[player_num].sin_port = htons(udp_port);
 
-        pthread_mutex_lock(&game_state.lock);
-        game_state.player_udp[player_num] = udp_addr;
-        game_state.player_sockets[player_num] = socket(AF_INET, SOCK_DGRAM, 0);
-        printf("[Server] Player %d UDP ready on port %d\n", player_num, udp_port);
+        // Start game if both players are ready
         if (game_state.active == MAX_PLAYERS) {
-            printf("[Server] Both players connected, sending START message.\n");
-            for (int i = 0; i < MAX_PLAYERS; i++) {
-                char start_msg[] = "START\n";
-                printf("[Server] Sending START to player %d at %s:%d\n", i,
-                       inet_ntoa(game_state.player_udp[i].sin_addr),
-                       ntohs(game_state.player_udp[i].sin_port));
-                sendto(game_state.player_sockets[i], start_msg, strlen(start_msg), 0,
-                       (struct sockaddr*)&game_state.player_udp[i], sizeof(game_state.player_udp[i]));
-            }
-            // Do NOT reinitialize game state here, so that turn information remains valid.
+            broadcast_message(udp_fd, "START\n");
         }
-        pthread_mutex_unlock(&game_state.lock);
     } else {
         write(client_socket, "ERROR\n", 6);
     }
@@ -132,32 +172,32 @@ void *handle_client(void *arg) {
 
 int main() {
     int tcp_fd, udp_fd;
-    struct sockaddr_in tcp_addr, udp_addr;
-    int addrlen = sizeof(tcp_addr);
-
+    struct sockaddr_in addr;
     init_game();
 
+    // TCP setup
     tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
-    tcp_addr.sin_family = AF_INET;
-    tcp_addr.sin_addr.s_addr = INADDR_ANY;
-    tcp_addr.sin_port = htons(TCP_PORT);
-    bind(tcp_fd, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(TCP_PORT);
+    addr.sin_addr.s_addr = INADDR_ANY;
+    bind(tcp_fd, (struct sockaddr*)&addr, sizeof(addr));
     listen(tcp_fd, MAX_PLAYERS);
 
+    // UDP setup
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    udp_addr.sin_family = AF_INET;
-    udp_addr.sin_addr.s_addr = INADDR_ANY;
-    udp_addr.sin_port = htons(UDP_PORT);
-    bind(udp_fd, (struct sockaddr *)&udp_addr, sizeof(udp_addr));
+    addr.sin_port = htons(UDP_PORT);
+    bind(udp_fd, (struct sockaddr*)&addr, sizeof(addr));
 
-    printf("Server waiting for connections...\n");
-    printf("TCP port: %d, UDP port: %d\n", TCP_PORT, UDP_PORT);
+    // Start UDP listener thread
+    pthread_t tid;
+    pthread_create(&tid, NULL, udp_listener, &udp_fd);
+    pthread_detach(tid);
 
+    printf("Server running...\n");
     while (1) {
-        int *client_socket = malloc(sizeof(int));
-        *client_socket = accept(tcp_fd, (struct sockaddr *)&tcp_addr, (socklen_t*)&addrlen);
-        pthread_t tid;
-        pthread_create(&tid, NULL, handle_client, client_socket);
+        int *client_sock = malloc(sizeof(int));
+        *client_sock = accept(tcp_fd, NULL, NULL);
+        pthread_create(&tid, NULL, handle_client, client_sock);
         pthread_detach(tid);
     }
 
